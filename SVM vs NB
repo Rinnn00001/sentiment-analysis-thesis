@@ -1,0 +1,144 @@
+import pandas as pd
+import nltk
+import numpy as np # Added for grouped bar chart positioning
+from nltk.corpus import stopwords
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.svm import SVC
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib 
+
+# 1. Load your dataset 
+df = pd.read_csv(r'C:\Users\leone\OneDrive\Documents\BS Computer Science\4th Year\Manuscript\Training\student_feedback.csv')
+
+# 2. Preprocessing (Cleaning & Tokenization) 
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+
+def clean_text(text):
+    text = str(text).lower() 
+    tokens = text.split()
+    cleaned = [w for w in tokens if w not in stop_words]
+    return " ".join(cleaned)
+
+df['cleaned_feedback'] = df['Feedback'].apply(clean_text)
+
+# 3. Feature Extraction (TF-IDF) 
+vectorizer = TfidfVectorizer()
+X = vectorizer.fit_transform(df['cleaned_feedback'])
+y = df['Sentiment']
+
+# 4. Split data (80% Training, 20% Testing) 
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=42)
+
+# 5. Initialize Models 
+nb_model = MultinomialNB()
+svm_model = SVC(kernel='linear') 
+
+# 6. Training 
+nb_model.fit(X_train, y_train)
+svm_model.fit(X_train, y_train)
+
+print("Training Complete. Ready for Evaluation.")
+
+# 7. Model Evaluation Function (Enhanced to capture metrics for plotting)
+def evaluate_model(model, X_test, y_test, model_name):
+    predictions = model.predict(X_test)
+    acc = accuracy_score(y_test, predictions)
+    
+    # Extract Precision, Recall, and F1 specifically for the 'Negative' class
+    # to fulfill Objective 4 visualization
+    p, r, f, _ = precision_recall_fscore_support(y_test, predictions, labels=['Negative'], average=None)
+    
+    print(f"--- {model_name} Performance ---")
+    print(f"Accuracy: {acc:.4f}")
+    print("\nClassification Report:")
+    report = classification_report(y_test, predictions)
+    print(report)
+    
+    cm = confusion_matrix(y_test, predictions, labels=['Positive', 'Negative', 'Neutral'])
+    print(f"{model_name} Confusion Matrix:")
+    print(cm)
+    print("-" * 30)
+    
+    return acc, predictions, [p[0], r[0], f[0]]
+
+# Execute Evaluation and collect data for Objective 4
+nb_accuracy, nb_preds, nb_metrics = evaluate_model(nb_model, X_test, y_test, "Naïve Bayes")
+svm_accuracy, svm_preds, svm_metrics = evaluate_model(svm_model, X_test, y_test, "Support Vector Machine")
+
+# --- 8. STEP 1 FOR WEB APP: SAVE THE MODEL ---
+joblib.dump(svm_model, 'svm_sentiment_model.pkl')
+joblib.dump(vectorizer, 'tfidf_vectorizer.pkl')
+print("Model files saved for Web App.")
+
+# --- 9. NEW VISUALIZATION: GROUPED BAR CHART (OBJECTIVE 4) ---
+labels = ['Precision', 'Recall', 'F1-Score']
+x = np.arange(len(labels)) 
+width = 0.35 
+
+fig, ax = plt.subplots(figsize=(10, 6))
+rects1 = ax.bar(x - width/2, svm_metrics, width, label='SVM', color='#ff7f7f')
+rects2 = ax.bar(x + width/2, nb_metrics, width, label='Naïve Bayes', color='#87ceeb')
+
+ax.set_ylabel('Scores')
+ax.set_title('Figure 6: Comparative Efficacy (Negative Sentiment Class)')
+ax.set_xticks(x)
+ax.set_xticklabels(labels)
+ax.legend()
+ax.set_ylim(0, 1.1)
+
+# Label the bars with their values
+def autolabel(rects):
+    for rect in rects:
+        height = rect.get_height()
+        ax.annotate(f'{height:.2f}',
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(0, 3), 
+                    textcoords="offset points",
+                    ha='center', va='bottom', fontweight='bold')
+
+autolabel(rects1)
+autolabel(rects2)
+
+fig.tight_layout()
+plt.savefig('figure6_metrics_comparison.png')
+print("Figure 6 saved successfully.")
+plt.show()
+
+# --- 9. Data Visualization (Enhanced for Manuscript) [cite: 166, 173] ---
+
+# Figure 3: Accuracy Bar Chart Comparison
+# models = ['Naïve Bayes', 'SVM']
+# accuracies = [nb_accuracy, svm_accuracy]
+# plt.figure(figsize=(8, 6))
+# plt.bar(models, accuracies, color=['skyblue', 'salmon'])
+# plt.ylim(0, 1.1)
+# plt.ylabel('Accuracy Score')
+# plt.title('Figure 3: Comparative Accuracy of NB and SVM Models')
+# for i, v in enumerate(accuracies):
+#     plt.text(i, v + 0.02, f"{v*100:.2f}%", ha='center', fontweight='bold')
+# plt.savefig('figure3_accuracy_comparison.png')
+# plt.close()
+
+# # Figure 4 & 5: Heatmap Visualization for Confusion Matrices [cite: 336, 340, 346]
+# def save_heatmap(y_true, y_pred, title, filename):
+#     cm = confusion_matrix(y_true, y_pred, labels=['Positive', 'Negative', 'Neutral'])
+#     plt.figure(figsize=(8, 6))
+#     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+#                 xticklabels=['Positive', 'Negative', 'Neutral'], 
+#                 yticklabels=['Positive', 'Negative', 'Neutral'])
+#     plt.title(title)
+#     plt.ylabel('Actual Sentiment')
+#     plt.xlabel('Predicted Sentiment')
+#     plt.savefig(filename)
+#     plt.close()
+
+# save_heatmap(y_test, nb_preds, "Figure 4: Naïve Bayes Confusion Matrix Heatmap", "figure4_nb_heatmap.png")
+# save_heatmap(y_test, svm_preds, "Figure 5: SVM Confusion Matrix Heatmap", "figure5_svm_heatmap.png")
+
+# print("Visualizations (Figures 3, 4, and 5) saved successfully.")
+
